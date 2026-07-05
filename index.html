@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meme Coin Detective: The On-Chain Hunt</title>
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2290%22&gt;🕵️&lt;/text&gt;&lt;/svg&gt;">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="grain-overlay"></div>
+<div class="blinds-overlay"></div>
+<div class="vignette-overlay"></div>
+
+<div id="hud" class="hud hidden">
+  <div class="hud-item">
+    <span class="hud-label">Bankroll</span>
+    <span class="hud-value" id="hud-bankroll">$1,000</span>
+  </div>
+  <div class="hud-item">
+    <span class="hud-label">Case #</span>
+    <span class="hud-value" id="hud-case">0</span>
+  </div>
+  <div class="hud-item">
+    <span class="hud-label">Heat</span>
+    <span class="hud-value" id="hud-heat">🔥</span>
+  </div>
+</div>
+
+<main id="app">
+
+  <!-- TITLE SCREEN -->
+  <section id="screen-title" class="screen active">
+    <div class="title-card">
+      <div class="badge">🕵️‍♂️</div>
+      <h1 class="game-title">MEME COIN<br>DETECTIVE</h1>
+      <h2 class="game-subtitle">The On-Chain Hunt</h2>
+      <p class="flavor-text">
+        The blockchain never sleeps, and neither do the rug pullers.<br>
+        You're a degen trader with a detective's eye — scan the wallets,
+        read the chain like a rap sheet, and find the next 100x
+        before the developer pulls the rug out from under you.
+      </p>
+      <p class="flavor-text small">
+        Ape in too early and you miss the pump. Get greedy and you get rugged.
+        Somewhere in between is where legends are made.
+      </p>
+      <button id="btn-start" class="btn btn-primary btn-glow">Open New Case</button>
+      <div class="high-score" id="high-score-line"></div>
+    </div>
+  </section>
+
+  <!-- BRIEFING SCREEN -->
+  <section id="screen-briefing" class="screen">
+    <div class="case-file">
+      <div class="case-file-header">CASE FILE #<span id="briefing-case-num">1</span></div>
+      <div class="coin-name" id="briefing-coin-name">$WOJAK9000</div>
+      <p class="typewriter" id="briefing-text"></p>
+      <div class="briefing-stats">
+        <div><span class="lbl">Wallets on the chain:</span> <span id="briefing-wallet-count">6</span></div>
+        <div><span class="lbl">Scan window:</span> <span id="briefing-scan-time">10s</span></div>
+      </div>
+      <button id="btn-begin-scan" class="btn btn-primary">Begin Scan</button>
+    </div>
+  </section>
+
+  <!-- SCAN SCREEN -->
+  <section id="screen-scan" class="screen">
+    <div class="scan-header">
+      <div class="scan-instructions">Flag every wallet showing <strong>bot-like</strong> transaction patterns — identical amounts, robotic timing. Click a wallet to flag it.</div>
+      <div class="scan-timer-wrap">
+        <div class="scan-timer-bar"><div id="scan-timer-fill" class="scan-timer-fill"></div></div>
+        <div class="scan-timer-label"><span id="scan-timer-seconds">10.0</span>s</div>
+      </div>
+    </div>
+    <div id="wallet-grid" class="wallet-grid"></div>
+    <button id="btn-submit-scan" class="btn btn-secondary">Submit Scan Early</button>
+  </section>
+
+  <!-- SCAN RESULTS SCREEN -->
+  <section id="screen-scan-results" class="screen">
+    <div class="case-file">
+      <div class="case-file-header">DETECTIVE'S NOTES</div>
+      <div id="scan-results-list" class="scan-results-list"></div>
+      <div class="scan-results-summary" id="scan-results-summary"></div>
+      <button id="btn-to-buy" class="btn btn-primary">Proceed to Buy Screen</button>
+    </div>
+  </section>
+
+  <!-- BUY SCREEN -->
+  <section id="screen-buy" class="screen">
+    <div class="buy-card">
+      <div class="coin-name" id="buy-coin-name">$WOJAK9000</div>
+      <p class="flavor-text">
+        Your notebook's full of scribbles and half of them contradict each other.
+        Doesn't matter now. Money talks, detective work walks.
+      </p>
+      <div class="buy-amount">Stake: <span id="buy-amount">$100</span></div>
+      <button id="btn-buy" class="btn btn-buy btn-glow">BUY</button>
+    </div>
+  </section>
+
+  <!-- HOLD SCREEN -->
+  <section id="screen-hold" class="screen">
+    <div class="hold-wrap">
+      <div class="hold-top">
+        <div class="hold-coin-name" id="hold-coin-name">$WOJAK9000</div>
+        <div class="multiplier" id="hold-multiplier">1.00x</div>
+        <div class="pnl-preview" id="hold-pnl-preview">+$0</div>
+      </div>
+      <canvas id="hold-canvas" class="hold-canvas"></canvas>
+      <div id="warning-banner" class="warning-banner hidden">🐋 Suspicious wallet activity detected...</div>
+      <div id="rug-flash" class="rug-flash hidden"></div>
+      <button id="btn-sell" class="btn btn-sell btn-glow">SELL</button>
+    </div>
+  </section>
+
+  <!-- RESULT SCREEN -->
+  <section id="screen-result" class="screen">
+    <div class="case-file result-card">
+      <div class="result-headline" id="result-headline">CASHED OUT</div>
+      <div class="result-detail" id="result-detail">You sold $WOJAK9000 at 2.40x</div>
+      <div class="result-pnl" id="result-pnl">+$140</div>
+      <div class="result-bankroll">Bankroll: <span id="result-bankroll">$1,140</span></div>
+      <div class="result-buttons">
+        <button id="btn-next-case" class="btn btn-primary">Next Case</button>
+        <button id="btn-retire" class="btn btn-secondary">Retire &amp; Bank It</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- GAME OVER SCREEN -->
+  <section id="screen-gameover" class="screen">
+    <div class="case-file result-card">
+      <div class="result-headline busted">CASE CLOSED</div>
+      <p class="flavor-text">Busted. The chain gave you every clue and you still went broke. Happens to the best of us.</p>
+      <div class="result-detail">Cases solved: <span id="gameover-cases">0</span></div>
+      <button id="btn-restart" class="btn btn-primary">Start New Investigation</button>
+    </div>
+  </section>
+
+  <!-- RETIRED SCREEN -->
+  <section id="screen-retired" class="screen">
+    <div class="case-file result-card">
+      <div class="result-headline">RETIRED IN STYLE</div>
+      <p class="flavor-text">You closed the notebook while you were still ahead. Rarest move in the game.</p>
+      <div class="result-detail">Final bankroll: <span id="retired-bankroll">$1,000</span></div>
+      <div class="result-detail">Cases solved: <span id="retired-cases">0</span></div>
+      <button id="btn-restart-2" class="btn btn-primary">Start New Investigation</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer-note">Not financial advice. Not even close.</footer>
+
+<script src="game.js" defer></script>
+</body>
+</html>
