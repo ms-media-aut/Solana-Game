@@ -87,6 +87,48 @@ function playWarningBlip() {
   playTone(1000, 0.14, 0.08, 'square', 0.1);
 }
 
+/* ---------------- Rewarded ad service (pluggable) ----------------
+   AdService is the seam for monetization. Swap MockAdAdapter for a real
+   SDK adapter (Google H5 Games Ads, CrazyGames SDK, AdinPlay, etc.) when
+   this game is embedded on an ad-supported portal — every call site in
+   this file only ever talks to AdService.showRewarded(), never to a
+   vendor SDK directly, so the adapter is the only thing that needs to
+   change. ------------------------------------------------------------ */
+
+const AdService = {
+  adapter: null,
+  init(adapter) { this.adapter = adapter; },
+  showRewarded(placementName, onReward, onClose) {
+    if (!this.adapter) { if (onClose) onClose(); return; }
+    this.adapter.showRewarded(placementName, onReward, onClose);
+  },
+};
+
+const MockAdAdapter = {
+  showRewarded(placementName, onReward, onClose) {
+    const modal = document.getElementById('ad-modal');
+    const label = document.getElementById('ad-modal-label');
+    const countdownEl = document.getElementById('ad-modal-countdown');
+    label.textContent = placementName;
+    modal.classList.remove('hidden');
+
+    let secondsLeft = 4;
+    countdownEl.textContent = secondsLeft;
+    const interval = setInterval(() => {
+      secondsLeft--;
+      countdownEl.textContent = Math.max(secondsLeft, 0);
+      if (secondsLeft <= 0) {
+        clearInterval(interval);
+        modal.classList.add('hidden');
+        if (onReward) onReward();
+        if (onClose) onClose();
+      }
+    }, 1000);
+  },
+};
+
+AdService.init(MockAdAdapter);
+
 /* ---------------- Screen management ---------------- */
 
 function showScreen(id) {
@@ -100,36 +142,78 @@ const state = {
   bankroll: 1000,
   heat: 0,
   casesSolved: 0,
+  streak: 0,
   currentCase: null,
   scanFlags: new Set(),
   intelGood: false,
+  adTipUsed: false,
+  lastScanStats: null,
   stake: 0,
+  bestMultiplierRun: 1,
   hold: null, // runtime hold-phase data
 };
 
 const HS_KEY_BANKROLL = 'mcd_high_bankroll';
 const HS_KEY_CASES = 'mcd_high_cases';
+const HS_KEY_MULTIPLIER = 'mcd_high_multiplier';
+const HS_KEY_HOF = 'mcd_hall_of_fame';
 
 function loadHighScores() {
   const bankroll = parseInt(localStorage.getItem(HS_KEY_BANKROLL) || '0', 10);
   const cases = parseInt(localStorage.getItem(HS_KEY_CASES) || '0', 10);
-  return { bankroll, cases };
+  const multiplier = parseFloat(localStorage.getItem(HS_KEY_MULTIPLIER) || '0');
+  return { bankroll, cases, multiplier };
+}
+
+function loadHallOfFame() {
+  try {
+    return JSON.parse(localStorage.getItem(HS_KEY_HOF) || '[]');
+  } catch (e) {
+    return [];
+  }
 }
 
 function maybeSaveHighScore() {
   const hs = loadHighScores();
   if (state.bankroll > hs.bankroll) localStorage.setItem(HS_KEY_BANKROLL, String(Math.round(state.bankroll)));
   if (state.casesSolved > hs.cases) localStorage.setItem(HS_KEY_CASES, String(state.casesSolved));
+  if (state.bestMultiplierRun > hs.multiplier) localStorage.setItem(HS_KEY_MULTIPLIER, String(state.bestMultiplierRun));
+}
+
+function recordHallOfFameEntry() {
+  if (state.casesSolved === 0) return;
+  const entries = loadHallOfFame();
+  entries.push({
+    bankroll: Math.round(state.bankroll),
+    cases: state.casesSolved,
+    multiplier: Number(state.bestMultiplierRun.toFixed(2)),
+  });
+  entries.sort((a, b) => b.bankroll - a.bankroll);
+  localStorage.setItem(HS_KEY_HOF, JSON.stringify(entries.slice(0, 5)));
+}
+
+function pluralize(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
 function renderHighScoreLine() {
   const hs = loadHighScores();
-  const el = document.getElementById('high-score-line');
+  const statsEl = document.getElementById('high-score-line');
   if (hs.bankroll > 0) {
-    el.textContent = `Best case file: ${formatMoney(hs.bankroll)} bankroll · ${hs.cases} cases solved`;
+    statsEl.textContent = `Best case file: ${formatMoney(hs.bankroll)} bankroll · ${pluralize(hs.cases, 'case')} solved · ${hs.multiplier.toFixed(2)}x best cash-out`;
   } else {
-    el.textContent = '';
+    statsEl.textContent = '';
   }
+
+  const hofEl = document.getElementById('hof-list');
+  const entries = loadHallOfFame();
+  if (entries.length === 0) {
+    hofEl.innerHTML = '';
+    return;
+  }
+  hofEl.innerHTML = '<div class="hof-header">HALL OF FAME</div>' + entries.map((e, i) =>
+    `<div class="hof-row"><span class="hof-rank">#${i + 1}</span><span class="hof-bankroll">${formatMoney(e.bankroll)}</span><span class="hof-detail">${pluralize(e.cases, 'case')} · ${e.multiplier.toFixed(2)}x best</span></div>`
+  ).join('');
 }
 
 function updateHud() {
@@ -137,6 +221,7 @@ function updateHud() {
   document.getElementById('hud-case').textContent = state.casesSolved + 1;
   const fires = '🔥'.repeat(clamp(1 + Math.floor(state.heat / 2), 1, 5));
   document.getElementById('hud-heat').textContent = fires;
+  document.getElementById('hud-streak').textContent = state.streak > 0 ? `⚡${state.streak}` : '—';
 }
 
 /* ---------------- Coin name generator ---------------- */
@@ -261,6 +346,11 @@ let scanTimeTotal = 0;
 
 function setupScanScreen(gameCase) {
   state.scanFlags = new Set();
+  state.adTipUsed = false;
+  const adTipBtn = document.getElementById('btn-ad-tip');
+  adTipBtn.disabled = false;
+  adTipBtn.textContent = '📞 Call a Contact (Watch Ad)';
+
   const grid = document.getElementById('wallet-grid');
   grid.innerHTML = '';
 
@@ -309,7 +399,12 @@ function setupScanScreen(gameCase) {
   scanTimeTotal = gameCase.scanTime;
   scanTimeLeft = gameCase.scanTime;
   updateScanTimerUI();
+  startScanTimerInterval();
 
+  showScreen('screen-scan');
+}
+
+function startScanTimerInterval() {
   clearInterval(scanTimerInterval);
   scanTimerInterval = setInterval(() => {
     scanTimeLeft -= 0.1;
@@ -319,8 +414,6 @@ function setupScanScreen(gameCase) {
       finishScan();
     }
   }, 100);
-
-  showScreen('screen-scan');
 }
 
 function updateScanTimerUI() {
@@ -334,6 +427,39 @@ function updateScanTimerUI() {
 function finishScan() {
   clearInterval(scanTimerInterval);
   computeScanResults(state.currentCase);
+}
+
+function useAdTip() {
+  if (state.adTipUsed) return;
+  const gameCase = state.currentCase;
+  const btn = document.getElementById('btn-ad-tip');
+
+  const unflaggedBots = gameCase.wallets
+    .map((wallet, idx) => ({ wallet, idx }))
+    .filter(({ wallet, idx }) => wallet.isBot && !state.scanFlags.has(idx));
+
+  if (unflaggedBots.length === 0) {
+    const original = btn.textContent;
+    btn.textContent = "Already got 'em all";
+    setTimeout(() => { btn.textContent = original; }, 1200);
+    return;
+  }
+
+  btn.disabled = true;
+  clearInterval(scanTimerInterval); // pause the clock while the "ad" plays — fair pause, same as a real rewarded break
+
+  AdService.showRewarded('Call a Contact', () => {
+    const pick = choice(unflaggedBots);
+    state.scanFlags.add(pick.idx);
+    const card = document.querySelector(`#wallet-grid [data-idx="${pick.idx}"]`);
+    if (card) card.classList.add('flagged', 'tipped');
+    playFlag();
+    state.adTipUsed = true;
+    btn.textContent = '📞 Lead used';
+  }, () => {
+    if (!state.adTipUsed) btn.disabled = false;
+    startScanTimerInterval();
+  });
 }
 
 /* ---------------- Scan results ---------------- */
@@ -378,6 +504,11 @@ function computeScanResults(gameCase) {
 
   const accuracy = gameCase.botCount > 0 ? clamp((hits - falseFlags) / gameCase.botCount, 0, 1) : 0;
   state.intelGood = accuracy >= 0.6;
+  state.lastScanStats = { hits, falseFlags, missed, botCount: gameCase.botCount };
+
+  const bonus = hits * 15 - falseFlags * 8;
+  state.bankroll = Math.max(0, state.bankroll + bonus);
+  updateHud();
 
   const summary = document.getElementById('scan-results-summary');
   summary.innerHTML = `You flagged ${hits} of ${gameCase.botCount} bot wallets correctly` +
@@ -385,7 +516,14 @@ function computeScanResults(gameCase) {
     `<br>Field intel: ` +
     (state.intelGood
       ? `<span class="intel-good">SOLID.</span> You'll get a heads-up before anything shady goes down.`
-      : `<span class="intel-bad">SHAKY.</span> You're flying blind on this one. Good luck, detective.`);
+      : `<span class="intel-bad">SHAKY.</span> You're flying blind on this one. Good luck, detective.`) +
+    `<br>Detective bonus: ` +
+    (bonus >= 0
+      ? `<span class="intel-good">+${formatMoney(bonus)}</span> added to your bankroll.`
+      : `<span class="intel-bad">${formatMoney(bonus)}</span> — sloppy accusations cost you.`);
+
+  const toBuyBtn = document.getElementById('btn-to-buy');
+  toBuyBtn.textContent = state.bankroll <= 0 ? 'See Case File' : 'Proceed to Buy Screen';
 
   showScreen('screen-scan-results');
 }
@@ -395,6 +533,47 @@ function addVerdict(card, kind) {
   v.className = 'wallet-verdict ' + kind;
   v.textContent = kind === 'bot' ? 'BOT / SNIPER PATTERN' : 'ORGANIC TRADER';
   card.appendChild(v);
+}
+
+/* ---------------- Live wallet activity feed (gmgn-style ticker) ---------------- */
+
+const KOL_TAGS = [
+  { cls: 'smart', label: 'Smart Money' },
+  { cls: 'whale', label: 'Whale' },
+  { cls: 'sniper', label: 'Sniper' },
+  { cls: 'kol', label: 'KOL' },
+];
+
+const KOL_HANDLES = ['@GigaChad_Calls', '@SolanaSensei', '@RugRadarTom', '@AnonWhale88', '@DegenOracle',
+  '@ChartWizard', '@InsiderAlpha', '@MoonMathGuy', '@PumpProphet', '@CalloutKing'];
+
+function spawnKolRow() {
+  const rowsEl = document.getElementById('kol-feed-rows');
+  if (!rowsEl) return;
+
+  const tag = choice(KOL_TAGS);
+  const isBuy = Math.random() < 0.78;
+  const label = tag.cls === 'kol' ? choice(KOL_HANDLES) : truncateAddress(randomBase58(44));
+  const amount = randInt(300, 40000);
+
+  const row = document.createElement('div');
+  row.className = 'kol-row';
+  row.innerHTML = `<span class="kol-tag ${tag.cls}">${tag.label}</span>` +
+    `<span class="kol-addr">${label}</span>` +
+    `<span class="kol-side ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'BUY' : 'SELL'}</span>` +
+    `<span class="kol-amt">${formatMoney(amount)}</span>`;
+
+  rowsEl.insertBefore(row, rowsEl.firstChild);
+  while (rowsEl.children.length > 8) rowsEl.removeChild(rowsEl.lastChild);
+}
+
+function scheduleKolRow(h) {
+  if (!h || h.resolved) return;
+  h.kolTimeout = setTimeout(() => {
+    if (!h || h.resolved) return;
+    spawnKolRow();
+    scheduleKolRow(h);
+  }, rand(500, 1400));
 }
 
 /* ---------------- Buy screen ---------------- */
@@ -416,6 +595,7 @@ function setupHoldScreen(gameCase) {
   multEl.classList.remove('falling');
   multEl.textContent = '1.00x';
   document.getElementById('hold-pnl-preview').textContent = '+$0';
+  document.getElementById('kol-feed-rows').innerHTML = '';
 
   showScreen('screen-hold');
 
@@ -439,9 +619,11 @@ function setupHoldScreen(gameCase) {
     canvasWidth: rect.width,
     canvasHeight: rect.height,
     rafId: null,
+    kolTimeout: null,
   };
 
   state.hold.rafId = requestAnimationFrame(holdLoop);
+  scheduleKolRow(state.hold);
 }
 
 function computeMultiplier(gameCase, ts) {
@@ -538,6 +720,7 @@ function stopHoldLoop() {
   if (h) {
     h.resolved = true;
     if (h.rafId) cancelAnimationFrame(h.rafId);
+    if (h.kolTimeout) clearTimeout(h.kolTimeout);
   }
 }
 
@@ -570,6 +753,28 @@ function handleSell() {
 
 /* ---------------- Result / progression ---------------- */
 
+function refreshResultButtons() {
+  const nextBtn = document.getElementById('btn-next-case');
+  const retireBtn = document.getElementById('btn-retire');
+  if (state.bankroll <= 0) {
+    nextBtn.classList.add('hidden');
+    retireBtn.textContent = 'See Case File';
+  } else {
+    nextBtn.classList.remove('hidden');
+    retireBtn.textContent = 'Retire & Bank It';
+  }
+}
+
+function computeAchievementBadge(rugged, multiplier) {
+  if (rugged) return '';
+  const badges = [];
+  if (multiplier >= 3) badges.push('💎 Diamond Hands');
+  else if (multiplier < 1.2) badges.push('😅 Paper Hands');
+  const s = state.lastScanStats;
+  if (s && s.botCount > 0 && s.hits === s.botCount && s.falseFlags === 0) badges.push('🎯 Sharp Shooter');
+  return badges.join(' · ');
+}
+
 function resolveOutcome({ rugged, multiplier }) {
   const gameCase = state.currentCase;
   const stake = state.stake;
@@ -577,15 +782,16 @@ function resolveOutcome({ rugged, multiplier }) {
   let profit;
   if (rugged) {
     profit = -stake;
+    state.streak = 0;
   } else {
     profit = stake * (multiplier - 1);
+    state.casesSolved += 1;
+    state.heat += 1;
+    state.streak += 1;
+    state.bestMultiplierRun = Math.max(state.bestMultiplierRun, multiplier);
   }
 
   state.bankroll += profit;
-  if (!rugged) {
-    state.casesSolved += 1;
-    state.heat += 1;
-  }
 
   document.getElementById('result-headline').textContent = rugged ? 'RUGGED!' : 'CASHED OUT';
   document.getElementById('result-headline').classList.toggle('rugged', rugged);
@@ -601,21 +807,61 @@ function resolveOutcome({ rugged, multiplier }) {
 
   document.getElementById('result-bankroll').textContent = formatMoney(state.bankroll);
 
-  updateHud();
-  maybeSaveHighScore();
+  const badgeEl = document.getElementById('result-badge');
+  const badgeText = computeAchievementBadge(rugged, multiplier);
+  badgeEl.textContent = badgeText;
+  badgeEl.classList.toggle('hidden', !badgeText);
 
-  const nextBtn = document.getElementById('btn-next-case');
-  const retireBtn = document.getElementById('btn-retire');
-
-  if (state.bankroll <= 0) {
-    nextBtn.classList.add('hidden');
-    retireBtn.textContent = 'See Case File';
+  const streakEl = document.getElementById('streak-bonus-line');
+  if (!rugged && state.streak > 0 && state.streak % 3 === 0) {
+    const streakBonus = 50;
+    state.bankroll += streakBonus;
+    streakEl.textContent = `🔥 Hot Streak x${state.streak}! +${formatMoney(streakBonus)} bonus`;
+    streakEl.classList.remove('hidden');
+    document.getElementById('result-bankroll').textContent = formatMoney(state.bankroll);
   } else {
-    nextBtn.classList.remove('hidden');
-    retireBtn.textContent = 'Retire & Bank It';
+    streakEl.classList.add('hidden');
   }
 
+  const secondChanceBtn = document.getElementById('btn-second-chance');
+  if (rugged) {
+    secondChanceBtn.classList.remove('hidden');
+    secondChanceBtn.disabled = false;
+    secondChanceBtn.textContent = '📼 Watch Ad: Recover 50%';
+  } else {
+    secondChanceBtn.classList.add('hidden');
+  }
+
+  updateHud();
+  maybeSaveHighScore();
+  refreshResultButtons();
+
   showScreen('screen-result');
+}
+
+function useSecondChance() {
+  const btn = document.getElementById('btn-second-chance');
+  btn.disabled = true;
+
+  AdService.showRewarded('Second Chance', () => {
+    const refund = state.stake * 0.5;
+    state.bankroll += refund;
+
+    const newPnl = -state.stake + refund;
+    const pnlEl = document.getElementById('result-pnl');
+    pnlEl.textContent = (newPnl >= 0 ? '+' : '') + formatMoney(newPnl);
+    pnlEl.classList.toggle('negative', newPnl < 0);
+
+    document.getElementById('result-bankroll').textContent = formatMoney(state.bankroll);
+    document.getElementById('result-detail').textContent += ' A contact spotted the exit and got you a 50% refund.';
+    btn.textContent = 'Recovered';
+
+    updateHud();
+    maybeSaveHighScore();
+    refreshResultButtons();
+  }, () => {
+    if (btn.textContent !== 'Recovered') btn.disabled = false;
+  });
 }
 
 function startNewCase() {
@@ -627,6 +873,7 @@ function startNewCase() {
 function goToGameOver() {
   document.getElementById('gameover-cases').textContent = state.casesSolved;
   maybeSaveHighScore();
+  recordHallOfFameEntry();
   showScreen('screen-gameover');
 }
 
@@ -634,6 +881,7 @@ function goToRetired() {
   document.getElementById('retired-bankroll').textContent = formatMoney(state.bankroll);
   document.getElementById('retired-cases').textContent = state.casesSolved;
   maybeSaveHighScore();
+  recordHallOfFameEntry();
   showScreen('screen-retired');
 }
 
@@ -641,6 +889,10 @@ function resetRun() {
   state.bankroll = 1000;
   state.heat = 0;
   state.casesSolved = 0;
+  state.streak = 0;
+  state.adTipUsed = false;
+  state.lastScanStats = null;
+  state.bestMultiplierRun = 1;
   state.currentCase = null;
   state.scanFlags = new Set();
   document.getElementById('hud').classList.add('hidden');
@@ -673,9 +925,18 @@ document.addEventListener('DOMContentLoaded', () => {
     finishScan();
   });
 
+  document.getElementById('btn-ad-tip').addEventListener('click', () => {
+    playClick();
+    useAdTip();
+  });
+
   document.getElementById('btn-to-buy').addEventListener('click', () => {
     playClick();
-    setupBuyScreen(state.currentCase);
+    if (state.bankroll <= 0) {
+      goToGameOver();
+    } else {
+      setupBuyScreen(state.currentCase);
+    }
   });
 
   document.getElementById('btn-buy').addEventListener('click', () => {
@@ -685,6 +946,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-sell').addEventListener('click', () => {
     handleSell();
+  });
+
+  document.getElementById('btn-second-chance').addEventListener('click', () => {
+    playClick();
+    useSecondChance();
   });
 
   document.getElementById('btn-next-case').addEventListener('click', () => {

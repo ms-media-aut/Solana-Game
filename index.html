@@ -26,6 +26,10 @@
     <span class="hud-label">Heat</span>
     <span class="hud-value" id="hud-heat">🔥</span>
   </div>
+  <div class="hud-item">
+    <span class="hud-label">Streak</span>
+    <span class="hud-value" id="hud-streak">—</span>
+  </div>
 </div>
 
 <main id="app">
@@ -48,6 +52,7 @@
       </p>
       <button id="btn-start" class="btn btn-primary btn-glow">Open New Case</button>
       <div class="high-score" id="high-score-line"></div>
+      <div class="hof-list" id="hof-list"></div>
     </div>
   </section>
 
@@ -75,7 +80,10 @@
       </div>
     </div>
     <div id="wallet-grid" class="wallet-grid"></div>
-    <button id="btn-submit-scan" class="btn btn-secondary">Submit Scan Early</button>
+    <div class="scan-actions">
+      <button id="btn-ad-tip" class="btn btn-ad">📞 Call a Contact (Watch Ad)</button>
+      <button id="btn-submit-scan" class="btn btn-secondary">Submit Scan Early</button>
+    </div>
   </section>
 
   <!-- SCAN RESULTS SCREEN -->
@@ -110,6 +118,10 @@
         <div class="pnl-preview" id="hold-pnl-preview">+$0</div>
       </div>
       <canvas id="hold-canvas" class="hold-canvas"></canvas>
+      <div class="kol-feed">
+        <div class="kol-feed-header">LIVE WALLET ACTIVITY</div>
+        <div class="kol-feed-rows" id="kol-feed-rows"></div>
+      </div>
       <div id="warning-banner" class="warning-banner hidden">🐋 Suspicious wallet activity detected...</div>
       <div id="rug-flash" class="rug-flash hidden"></div>
       <button id="btn-sell" class="btn btn-sell btn-glow">SELL</button>
@@ -123,6 +135,11 @@
       <div class="result-detail" id="result-detail">You sold $WOJAK9000 at 2.40x</div>
       <div class="result-pnl" id="result-pnl">+$140</div>
       <div class="result-bankroll">Bankroll: <span id="result-bankroll">$1,140</span></div>
+      <div class="result-badge hidden" id="result-badge"></div>
+      <div class="streak-bonus hidden" id="streak-bonus-line"></div>
+      <div class="result-buttons">
+        <button id="btn-second-chance" class="btn btn-ad hidden">📼 Watch Ad: Recover 50%</button>
+      </div>
       <div class="result-buttons">
         <button id="btn-next-case" class="btn btn-primary">Next Case</button>
         <button id="btn-retire" class="btn btn-secondary">Retire &amp; Bank It</button>
@@ -152,6 +169,15 @@
   </section>
 
 </main>
+
+<div id="ad-modal" class="ad-modal hidden">
+  <div class="ad-modal-card">
+    <div class="ad-modal-eyebrow">Sponsored Break</div>
+    <div class="ad-modal-label" id="ad-modal-label">Call a Contact</div>
+    <div class="ad-modal-reel">▶</div>
+    <div class="ad-modal-sub">Video ad playing… reward in <span id="ad-modal-countdown">4</span>s</div>
+  </div>
+</div>
 
 <footer class="footer-note">Not financial advice. Not even close.</footer>
 
