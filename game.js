@@ -130,7 +130,55 @@ const MockAdAdapter = {
   },
 };
 
+// Real adapter for when the game is running inside the CrazyGames iframe.
+// Uses the documented HTML5 SDK v3 API: window.CrazyGames.SDK.ad.requestAd().
+const CrazyGamesAdAdapter = {
+  showRewarded(placementName, onReward, onClose) {
+    window.CrazyGames.SDK.ad.requestAd('rewarded', {
+      adFinished: () => {
+        if (onReward) onReward();
+        if (onClose) onClose();
+      },
+      adError: () => {
+        // No fill / ad blocked / SDK error — fail gracefully, no reward.
+        if (onClose) onClose();
+      },
+      adStarted: () => {},
+    });
+  },
+};
+
+// CrazyGames SDK lifecycle — only meaningful inside the CrazyGames iframe.
+// Everywhere else (GitHub Pages, local file, itch.io) these are no-ops so the
+// game keeps working standalone with the mock ad adapter.
+const CrazyGamesLifecycle = {
+  active: false,
+  init() {
+    if (typeof window.CrazyGames === 'undefined') {
+      AdService.init(MockAdAdapter);
+      return;
+    }
+    window.CrazyGames.SDK.init().then(() => {
+      this.active = true;
+      AdService.init(CrazyGamesAdAdapter);
+      window.CrazyGames.SDK.game.loadingStop();
+    }).catch(() => {
+      AdService.init(MockAdAdapter);
+    });
+  },
+  gameplayStart() {
+    if (this.active) window.CrazyGames.SDK.game.gameplayStart();
+  },
+  gameplayStop() {
+    if (this.active) window.CrazyGames.SDK.game.gameplayStop();
+  },
+};
+
 AdService.init(MockAdAdapter);
+if (typeof window.CrazyGames !== 'undefined') {
+  window.CrazyGames.SDK.game.loadingStart();
+}
+CrazyGamesLifecycle.init();
 
 /* ---------------- Screen management ---------------- */
 
@@ -633,6 +681,7 @@ function updateHoldButtons() {
 }
 
 function setupHoldScreen(gameCase) {
+  CrazyGamesLifecycle.gameplayStart();
   document.getElementById('hold-coin-name').textContent = gameCase.coinName;
   document.getElementById('warning-banner').classList.add('hidden');
   document.getElementById('rug-flash').classList.add('hidden');
@@ -865,6 +914,7 @@ function computeAchievementBadge(rugged, multiplier, partialSellCount, totalProf
 }
 
 function resolveOutcome({ rugged, multiplier }) {
+  CrazyGamesLifecycle.gameplayStop();
   const gameCase = state.currentCase;
   const h = state.hold;
   const remainingStake = h ? h.remainingStake : state.stake;
