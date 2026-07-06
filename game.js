@@ -130,20 +130,31 @@ const MockAdAdapter = {
   },
 };
 
+// Every call into the CrazyGames SDK is wrapped defensively: the SDK is a
+// third-party script that behaves differently (or throws) depending on
+// whether it's actually embedded in the CrazyGames iframe. A single
+// unexpected throw here must never be allowed to abort the rest of this
+// file — that would silently break every button in the game.
+function safeCrazyGamesCall(fn) {
+  try { fn(); } catch (e) { /* SDK unusable outside the CrazyGames iframe — ignore */ }
+}
+
 // Real adapter for when the game is running inside the CrazyGames iframe.
 // Uses the documented HTML5 SDK v3 API: window.CrazyGames.SDK.ad.requestAd().
 const CrazyGamesAdAdapter = {
   showRewarded(placementName, onReward, onClose) {
-    window.CrazyGames.SDK.ad.requestAd('rewarded', {
-      adFinished: () => {
-        if (onReward) onReward();
-        if (onClose) onClose();
-      },
-      adError: () => {
-        // No fill / ad blocked / SDK error — fail gracefully, no reward.
-        if (onClose) onClose();
-      },
-      adStarted: () => {},
+    safeCrazyGamesCall(() => {
+      window.CrazyGames.SDK.ad.requestAd('rewarded', {
+        adFinished: () => {
+          if (onReward) onReward();
+          if (onClose) onClose();
+        },
+        adError: () => {
+          // No fill / ad blocked / SDK error — fail gracefully, no reward.
+          if (onClose) onClose();
+        },
+        adStarted: () => {},
+      });
     });
   },
 };
@@ -158,27 +169,35 @@ const CrazyGamesLifecycle = {
       AdService.init(MockAdAdapter);
       return;
     }
-    window.CrazyGames.SDK.init().then(() => {
-      this.active = true;
-      AdService.init(CrazyGamesAdAdapter);
-      window.CrazyGames.SDK.game.loadingStop();
-    }).catch(() => {
+    try {
+      window.CrazyGames.SDK.init().then(() => {
+        this.active = true;
+        AdService.init(CrazyGamesAdAdapter);
+        safeCrazyGamesCall(() => window.CrazyGames.SDK.game.loadingStop());
+      }).catch(() => {
+        AdService.init(MockAdAdapter);
+      });
+    } catch (e) {
       AdService.init(MockAdAdapter);
-    });
+    }
   },
   gameplayStart() {
-    if (this.active) window.CrazyGames.SDK.game.gameplayStart();
+    if (this.active) safeCrazyGamesCall(() => window.CrazyGames.SDK.game.gameplayStart());
   },
   gameplayStop() {
-    if (this.active) window.CrazyGames.SDK.game.gameplayStop();
+    if (this.active) safeCrazyGamesCall(() => window.CrazyGames.SDK.game.gameplayStop());
   },
 };
 
 AdService.init(MockAdAdapter);
-if (typeof window.CrazyGames !== 'undefined') {
-  window.CrazyGames.SDK.game.loadingStart();
+safeCrazyGamesCall(() => {
+  if (typeof window.CrazyGames !== 'undefined') window.CrazyGames.SDK.game.loadingStart();
+});
+try {
+  CrazyGamesLifecycle.init();
+} catch (e) {
+  AdService.init(MockAdAdapter);
 }
-CrazyGamesLifecycle.init();
 
 /* ---------------- Screen management ---------------- */
 
