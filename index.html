@@ -40,6 +40,7 @@
       <div class="badge">🕵️‍♂️</div>
       <h1 class="game-title">MEME COIN<br>DETECTIVE</h1>
       <h2 class="game-subtitle">The On-Chain Hunt</h2>
+      <div class="degen-ticker"><div class="degen-ticker-track">WAGMI &nbsp;·&nbsp; NGMI &nbsp;·&nbsp; WEN LAMBO &nbsp;·&nbsp; DYOR &nbsp;·&nbsp; FEW UNDERSTAND &nbsp;·&nbsp; NUMBER GO UP &nbsp;·&nbsp; HFSP &nbsp;·&nbsp; SER, PLS &nbsp;·&nbsp; GM &nbsp;·&nbsp; WAGMI &nbsp;·&nbsp; NGMI &nbsp;·&nbsp; WEN LAMBO &nbsp;·&nbsp; DYOR &nbsp;·&nbsp; FEW UNDERSTAND &nbsp;·&nbsp; NUMBER GO UP &nbsp;·&nbsp; HFSP &nbsp;·&nbsp; SER, PLS &nbsp;·&nbsp; GM &nbsp;·&nbsp;</div></div>
       <p class="flavor-text">
         The blockchain never sleeps, and neither do the rug pullers.<br>
         You're a degen trader with a detective's eye — scan the wallets,
@@ -53,6 +54,7 @@
       <button id="btn-start" class="btn btn-primary btn-glow">Open New Case</button>
       <div class="high-score" id="high-score-line"></div>
       <div class="hof-list" id="hof-list"></div>
+      <div class="easter-egg-line hidden" id="easter-egg-line"></div>
     </div>
   </section>
 
@@ -104,7 +106,16 @@
         Your notebook's full of scribbles and half of them contradict each other.
         Doesn't matter now. Money talks, detective work walks.
       </p>
-      <div class="buy-amount">Stake: <span id="buy-amount">$100</span></div>
+      <div class="stake-panel">
+        <div class="buy-amount">Stake: <span id="buy-amount">$100</span></div>
+        <input type="range" id="stake-slider" class="stake-slider" min="1" max="1000" value="100" step="1">
+        <div class="stake-presets">
+          <button type="button" class="btn-chip stake-preset" data-pct="25">25%</button>
+          <button type="button" class="btn-chip stake-preset" data-pct="50">50%</button>
+          <button type="button" class="btn-chip stake-preset" data-pct="75">75%</button>
+          <button type="button" class="btn-chip stake-preset" data-pct="100">ALL IN</button>
+        </div>
+      </div>
       <button id="btn-buy" class="btn btn-buy btn-glow">BUY</button>
     </div>
   </section>
@@ -123,8 +134,12 @@
         <div class="kol-feed-rows" id="kol-feed-rows"></div>
       </div>
       <div id="warning-banner" class="warning-banner hidden">🐋 Suspicious wallet activity detected...</div>
+      <div id="hold-toast" class="hold-toast hidden"></div>
       <div id="rug-flash" class="rug-flash hidden"></div>
-      <button id="btn-sell" class="btn btn-sell btn-glow">SELL</button>
+      <div class="hold-sell-row">
+        <button id="btn-sell-half" class="btn btn-ad">✂️ Sell Half</button>
+        <button id="btn-sell" class="btn btn-sell btn-glow">SELL</button>
+      </div>
     </div>
   </section>
 
@@ -133,6 +148,7 @@
     <div class="case-file result-card">
       <div class="result-headline" id="result-headline">CASHED OUT</div>
       <div class="result-detail" id="result-detail">You sold $WOJAK9000 at 2.40x</div>
+      <div class="result-tagline" id="result-tagline"></div>
       <div class="result-pnl" id="result-pnl">+$140</div>
       <div class="result-bankroll">Bankroll: <span id="result-bankroll">$1,140</span></div>
       <div class="result-badge hidden" id="result-badge"></div>
@@ -178,6 +194,8 @@
     <div class="ad-modal-sub">Video ad playing… reward in <span id="ad-modal-countdown">4</span>s</div>
   </div>
 </div>
+
+<div id="global-toast" class="global-toast hidden"></div>
 
 <footer class="footer-note">Not financial advice. Not even close.</footer>
 

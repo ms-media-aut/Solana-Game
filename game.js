@@ -5,6 +5,9 @@
    Vanilla JS game logic — no dependencies, no build step.
    ========================================================= */
 
+console.log('%c🕵️ Meme Coin Detective: The On-Chain Hunt', 'color:#39ff88;font-size:15px;font-weight:bold;');
+console.log('%cThe only guaranteed 100x is reading the source. Ape responsibly.', 'color:#8a8577;font-size:11px;');
+
 /* ---------------- Utility ---------------- */
 
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -547,21 +550,34 @@ const KOL_TAGS = [
 const KOL_HANDLES = ['@GigaChad_Calls', '@SolanaSensei', '@RugRadarTom', '@AnonWhale88', '@DegenOracle',
   '@ChartWizard', '@InsiderAlpha', '@MoonMathGuy', '@PumpProphet', '@CalloutKing'];
 
+const KOL_JOKE_ROWS = [
+  "🐕 Anonymous wallet bought $0.03 — that's like, one Doge",
+  '👻 Dev wallet balance: 0.00 SOL',
+  '🪨 Wallet holds 400 NFTs of rocks',
+  '🧻 Someone just paperhanded 2 minutes in',
+  '🔮 Wallet labeled "not_a_rug.sol" just bought in',
+  '🐋 Whale wallet renamed itself to "totally_not_the_dev"',
+];
+
 function spawnKolRow() {
   const rowsEl = document.getElementById('kol-feed-rows');
   if (!rowsEl) return;
 
-  const tag = choice(KOL_TAGS);
-  const isBuy = Math.random() < 0.78;
-  const label = tag.cls === 'kol' ? choice(KOL_HANDLES) : truncateAddress(randomBase58(44));
-  const amount = randInt(300, 40000);
-
   const row = document.createElement('div');
   row.className = 'kol-row';
-  row.innerHTML = `<span class="kol-tag ${tag.cls}">${tag.label}</span>` +
-    `<span class="kol-addr">${label}</span>` +
-    `<span class="kol-side ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'BUY' : 'SELL'}</span>` +
-    `<span class="kol-amt">${formatMoney(amount)}</span>`;
+
+  if (Math.random() < 0.1) {
+    row.innerHTML = `<span class="kol-joke">${choice(KOL_JOKE_ROWS)}</span>`;
+  } else {
+    const tag = choice(KOL_TAGS);
+    const isBuy = Math.random() < 0.78;
+    const label = tag.cls === 'kol' ? choice(KOL_HANDLES) : truncateAddress(randomBase58(44));
+    const amount = randInt(300, 40000);
+    row.innerHTML = `<span class="kol-tag ${tag.cls}">${tag.label}</span>` +
+      `<span class="kol-addr">${label}</span>` +
+      `<span class="kol-side ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'BUY' : 'SELL'}</span>` +
+      `<span class="kol-amt">${formatMoney(amount)}</span>`;
+  }
 
   rowsEl.insertBefore(row, rowsEl.firstChild);
   while (rowsEl.children.length > 8) rowsEl.removeChild(rowsEl.lastChild);
@@ -578,19 +594,49 @@ function scheduleKolRow(h) {
 
 /* ---------------- Buy screen ---------------- */
 
+function setStake(amount) {
+  const bankroll = Math.max(1, Math.floor(state.bankroll));
+  state.stake = clamp(Math.round(amount) || 1, 1, bankroll);
+  document.getElementById('stake-slider').value = state.stake;
+  document.getElementById('buy-amount').textContent = formatMoney(state.stake);
+}
+
 function setupBuyScreen(gameCase) {
   document.getElementById('buy-coin-name').textContent = gameCase.coinName;
-  state.stake = Math.min(100, Math.max(1, state.bankroll));
-  document.getElementById('buy-amount').textContent = formatMoney(state.stake);
+  const bankroll = Math.max(1, Math.floor(state.bankroll));
+  const slider = document.getElementById('stake-slider');
+  slider.min = 1;
+  slider.max = bankroll;
+  const defaultStake = clamp(state.stake || Math.min(100, bankroll), 1, bankroll);
+  setStake(defaultStake);
   showScreen('screen-buy');
 }
 
 /* ---------------- Hold screen (core reaction game) ---------------- */
 
+function showHoldToast(text) {
+  const el = document.getElementById('hold-toast');
+  el.textContent = text;
+  el.classList.remove('hidden');
+  clearTimeout(showHoldToast.timeout);
+  showHoldToast.timeout = setTimeout(() => el.classList.add('hidden'), 1800);
+}
+
+function updateHoldButtons() {
+  const h = state.hold;
+  if (!h) return;
+  const halfBtn = document.getElementById('btn-sell-half');
+  const sellBtn = document.getElementById('btn-sell');
+  const canPartial = h.remainingStake > 5 && h.partialSellCount < 3;
+  halfBtn.disabled = !canPartial;
+  sellBtn.textContent = h.partialSellCount > 0 ? `SELL REST (${formatMoney(h.remainingStake)})` : 'SELL';
+}
+
 function setupHoldScreen(gameCase) {
   document.getElementById('hold-coin-name').textContent = gameCase.coinName;
   document.getElementById('warning-banner').classList.add('hidden');
   document.getElementById('rug-flash').classList.add('hidden');
+  document.getElementById('hold-toast').classList.add('hidden');
   const multEl = document.getElementById('hold-multiplier');
   multEl.classList.remove('falling');
   multEl.textContent = '1.00x';
@@ -620,8 +666,12 @@ function setupHoldScreen(gameCase) {
     canvasHeight: rect.height,
     rafId: null,
     kolTimeout: null,
+    remainingStake: state.stake,
+    realizedProfit: 0,
+    partialSellCount: 0,
   };
 
+  updateHoldButtons();
   state.hold.rafId = requestAnimationFrame(holdLoop);
   scheduleKolRow(state.hold);
 }
@@ -651,7 +701,7 @@ function holdLoop(now) {
   const multEl = document.getElementById('hold-multiplier');
   multEl.textContent = m.toFixed(2) + 'x';
   multEl.classList.toggle('falling', m < 1);
-  const pnl = state.stake * (m - 1);
+  const pnl = h.realizedProfit + h.remainingStake * (m - 1);
   const pnlEl = document.getElementById('hold-pnl-preview');
   pnlEl.textContent = (pnl >= 0 ? '+' : '') + formatMoney(pnl);
 
@@ -751,6 +801,29 @@ function handleSell() {
   resolveOutcome({ rugged: false, multiplier: m });
 }
 
+function handlePartialSell() {
+  const h = state.hold;
+  const gameCase = state.currentCase;
+  if (!h || h.resolved) return;
+  if (h.remainingStake <= 5 || h.partialSellCount >= 3) return;
+
+  const elapsed = performance.now() - h.startTime;
+  const m = computeMultiplier(gameCase, elapsed / 1000);
+  const chunk = h.remainingStake / 2;
+  const profit = chunk * (m - 1);
+
+  h.remainingStake -= chunk;
+  h.realizedProfit += profit;
+  h.partialSellCount += 1;
+  state.bankroll += profit;
+  state.bestMultiplierRun = Math.max(state.bestMultiplierRun, m);
+
+  playCashRegister();
+  updateHud();
+  updateHoldButtons();
+  showHoldToast(`✂️ Sold half at ${m.toFixed(2)}x (${profit >= 0 ? '+' : ''}${formatMoney(profit)} banked)`);
+}
+
 /* ---------------- Result / progression ---------------- */
 
 function refreshResultButtons() {
@@ -765,50 +838,80 @@ function refreshResultButtons() {
   }
 }
 
-function computeAchievementBadge(rugged, multiplier) {
-  if (rugged) return '';
+const WIN_HEADLINES = ['CASHED OUT', 'BAGS SECURED', 'LFG!', 'CALLED IT', 'PRINTER GO BRRR'];
+const RUG_HEADLINES = ['RUGGED!', 'NGMI', 'REKT', 'GG NO RE', 'LIQUIDITY: GONE'];
+
+const WIN_TAGLINES = [
+  'wen lambo?', 'Few understand this.', 'Number go up technology.', 'This is the way.',
+  "DYOR? Nah, I vibed.", 'Screenshotting this for the group chat.', 'Not financial advice. Just vibes.',
+];
+
+const RUG_TAGLINES = [
+  'I told you so.', 'NGMI. It happens to the best of us.', "Should've zoomed out.",
+  'This is not financial advice. Clearly.', 'The chart giveth, the chart taketh away.', 'Add it to the list.',
+];
+
+function computeAchievementBadge(rugged, multiplier, partialSellCount, totalProfit) {
   const badges = [];
-  if (multiplier >= 3) badges.push('💎 Diamond Hands');
-  else if (multiplier < 1.2) badges.push('😅 Paper Hands');
-  const s = state.lastScanStats;
-  if (s && s.botCount > 0 && s.hits === s.botCount && s.falseFlags === 0) badges.push('🎯 Sharp Shooter');
+  if (!rugged) {
+    if (multiplier >= 6) badges.push('🏎️ Wen Lambo');
+    else if (multiplier >= 3) badges.push('💎 Diamond Hands');
+    else if (multiplier < 1.2) badges.push('😅 Paper Hands');
+    const s = state.lastScanStats;
+    if (s && s.botCount > 0 && s.hits === s.botCount && s.falseFlags === 0) badges.push('🎯 Sharp Shooter');
+  }
+  if (partialSellCount > 0 && totalProfit > 0) badges.push('✂️ Smart Exit');
   return badges.join(' · ');
 }
 
 function resolveOutcome({ rugged, multiplier }) {
   const gameCase = state.currentCase;
-  const stake = state.stake;
+  const h = state.hold;
+  const remainingStake = h ? h.remainingStake : state.stake;
+  const realizedProfit = h ? h.realizedProfit : 0;
+  const partialSellCount = h ? h.partialSellCount : 0;
 
-  let profit;
+  let legProfit;
   if (rugged) {
-    profit = -stake;
+    legProfit = -remainingStake;
     state.streak = 0;
   } else {
-    profit = stake * (multiplier - 1);
+    legProfit = remainingStake * (multiplier - 1);
     state.casesSolved += 1;
     state.heat += 1;
     state.streak += 1;
     state.bestMultiplierRun = Math.max(state.bestMultiplierRun, multiplier);
   }
 
-  state.bankroll += profit;
+  state.bankroll += legProfit;
+  const totalProfit = realizedProfit + legProfit;
 
-  document.getElementById('result-headline').textContent = rugged ? 'RUGGED!' : 'CASHED OUT';
-  document.getElementById('result-headline').classList.toggle('rugged', rugged);
-  document.getElementById('result-headline').classList.toggle('busted', false);
+  const headlineEl = document.getElementById('result-headline');
+  headlineEl.textContent = rugged ? choice(RUG_HEADLINES) : choice(WIN_HEADLINES);
+  headlineEl.classList.toggle('rugged', rugged);
+  headlineEl.classList.toggle('busted', false);
 
-  document.getElementById('result-detail').textContent = rugged
-    ? `The dev pulled the rug on ${gameCase.coinName}. Liquidity: gone. Dignity: gone.`
-    : `You sold ${gameCase.coinName} at ${multiplier.toFixed(2)}x.`;
+  let detail;
+  if (rugged) {
+    detail = partialSellCount > 0
+      ? `The dev pulled the rug on ${gameCase.coinName} — but you'd already banked ${formatMoney(realizedProfit)} before the rest got rugged.`
+      : `The dev pulled the rug on ${gameCase.coinName}. Liquidity: gone. Dignity: gone.`;
+  } else {
+    detail = partialSellCount > 0
+      ? `You sold in ${partialSellCount + 1} chunks, cashing out the rest of ${gameCase.coinName} at ${multiplier.toFixed(2)}x.`
+      : `You sold ${gameCase.coinName} at ${multiplier.toFixed(2)}x.`;
+  }
+  document.getElementById('result-detail').textContent = detail;
+  document.getElementById('result-tagline').textContent = choice(rugged ? RUG_TAGLINES : WIN_TAGLINES);
 
   const pnlEl = document.getElementById('result-pnl');
-  pnlEl.textContent = (profit >= 0 ? '+' : '') + formatMoney(profit);
-  pnlEl.classList.toggle('negative', profit < 0);
+  pnlEl.textContent = (totalProfit >= 0 ? '+' : '') + formatMoney(totalProfit);
+  pnlEl.classList.toggle('negative', totalProfit < 0);
 
   document.getElementById('result-bankroll').textContent = formatMoney(state.bankroll);
 
   const badgeEl = document.getElementById('result-badge');
-  const badgeText = computeAchievementBadge(rugged, multiplier);
+  const badgeText = computeAchievementBadge(rugged, multiplier, partialSellCount, totalProfit);
   badgeEl.textContent = badgeText;
   badgeEl.classList.toggle('hidden', !badgeText);
 
@@ -842,15 +945,18 @@ function resolveOutcome({ rugged, multiplier }) {
 function useSecondChance() {
   const btn = document.getElementById('btn-second-chance');
   btn.disabled = true;
+  const h = state.hold;
+  const lostStake = h ? h.remainingStake : state.stake;
+  const realizedProfit = h ? h.realizedProfit : 0;
 
   AdService.showRewarded('Second Chance', () => {
-    const refund = state.stake * 0.5;
+    const refund = lostStake * 0.5;
     state.bankroll += refund;
 
-    const newPnl = -state.stake + refund;
+    const newTotal = realizedProfit - lostStake + refund;
     const pnlEl = document.getElementById('result-pnl');
-    pnlEl.textContent = (newPnl >= 0 ? '+' : '') + formatMoney(newPnl);
-    pnlEl.classList.toggle('negative', newPnl < 0);
+    pnlEl.textContent = (newTotal >= 0 ? '+' : '') + formatMoney(newTotal);
+    pnlEl.classList.toggle('negative', newTotal < 0);
 
     document.getElementById('result-bankroll').textContent = formatMoney(state.bankroll);
     document.getElementById('result-detail').textContent += ' A contact spotted the exit and got you a 50% refund.';
@@ -900,10 +1006,70 @@ function resetRun() {
   showScreen('screen-title');
 }
 
+/* ---------------- Easter eggs ---------------- */
+
+let globalToastTimeout = null;
+function showGlobalToast(text) {
+  const el = document.getElementById('global-toast');
+  el.textContent = text;
+  el.classList.remove('hidden');
+  clearTimeout(globalToastTimeout);
+  globalToastTimeout = setTimeout(() => el.classList.add('hidden'), 2200);
+}
+
+let easterEggKeyBuffer = '';
+function handleEasterEggKeydown(e) {
+  if (e.key.length !== 1) return;
+  easterEggKeyBuffer = (easterEggKeyBuffer + e.key.toLowerCase()).slice(-10);
+  if (easterEggKeyBuffer.endsWith('wagmi')) {
+    easterEggKeyBuffer = '';
+    ensureAudio();
+    playCashRegister();
+    showGlobalToast('🙌 WAGMI ENERGY ACTIVATED');
+  } else if (easterEggKeyBuffer.endsWith('ngmi')) {
+    easterEggKeyBuffer = '';
+    ensureAudio();
+    playSadTrombone();
+    showGlobalToast('📉 NGMI... it happens to the best of us.');
+  }
+}
+
+let badgeClickTimes = [];
+function handleBadgeClick() {
+  const now = Date.now();
+  badgeClickTimes.push(now);
+  badgeClickTimes = badgeClickTimes.filter((t) => now - t < 2000);
+  if (badgeClickTimes.length >= 5) {
+    badgeClickTimes = [];
+    const el = document.getElementById('easter-egg-line');
+    el.textContent = "🍜 You found the detective's secret ramen stash. Carry on.";
+    el.classList.remove('hidden');
+    playFlag();
+  }
+}
+
 /* ---------------- Wire up events ---------------- */
 
 document.addEventListener('DOMContentLoaded', () => {
   renderHighScoreLine();
+  document.addEventListener('keydown', handleEasterEggKeydown);
+  document.querySelector('.badge').addEventListener('click', handleBadgeClick);
+
+  document.getElementById('stake-slider').addEventListener('input', (e) => {
+    setStake(parseInt(e.target.value, 10) || 1);
+  });
+
+  document.querySelectorAll('.stake-preset').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playClick();
+      const pct = parseInt(btn.dataset.pct, 10);
+      setStake(Math.round(state.bankroll * pct / 100));
+    });
+  });
+
+  document.getElementById('btn-sell-half').addEventListener('click', () => {
+    handlePartialSell();
+  });
 
   document.getElementById('btn-start').addEventListener('click', () => {
     ensureAudio();
